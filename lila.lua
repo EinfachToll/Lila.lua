@@ -22,7 +22,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE. ]]
 
-LILA_FILE                           = "~/lilaliste"             -- the file where Lila stores applications and other data
+
+LILA_FILE                           = "~/.lilaliste"            -- the file where applications, time of last access, aliases etc. are stored
 
 UPDATE_COMMAND                      = "aktualisieren"
 UPDATE_DEBIAN_COMMAND               = "debian-aktualisieren"    -- the command that calls update-menus; empty string disables it
@@ -31,7 +32,7 @@ REMOVE_COMMAND                      = "weg"
 
 DMENU_POS                           = "top"                     -- "top" or "bottom"
 DMENU_MATCH_CASE                    = false
-DMENU_LINES                         = 0                         -- 0 means horizontally, > 0 vertically with that many lines
+DMENU_LINES                         = 0                         -- 0 means horizontal mode, > 0 vertical mode with that many lines
 DMENU_EXTRA_PARAMS                  = ""
 DMENU_BACKGROUND_COLOR              = "#002B36"
 DMENU_FONT_COLOR                    = "#839496"
@@ -44,7 +45,7 @@ TERMINAL_PROGRAM                    = "xterm -e"
 
 
 function dmenuparams()
-    params = {}
+    local params = {}
 
     if DMENU_POS == "bottom" then
         table.insert(params, "-b")
@@ -69,9 +70,9 @@ end
 
 function calldmenu(commands)
     local paramstring = table.concat(dmenuparams(), " ")
-    local cmd = 'dmenu '..paramstring..' <<EOF\n'..table.concat(commands, '\n')..'\nEOF'
-    local f = assert(io.popen(cmd, 'r'))
-    local s = assert(f:read('*a'))
+    local cmd = "dmenu "..paramstring.." <<EOF\n"..table.concat(commands, "\n").."\nEOF"
+    local f = assert(io.popen(cmd, "r"))
+    local s = assert(f:read("*a"))
     f:close()
     return s
 end
@@ -81,8 +82,7 @@ function sortbyfrecency(commands)
     local result = {}
     local now = os.time()
     for cmd, access in pairs(commands) do
-        --local modified_rank = -access.rank * math.log(4.02745e-7 * (now - access.time))
-        local modified_rank = access.rank / (now - access.time + 1) -- +1 to avoid division by 0
+        local modified_rank = access.rank / (now - access.time + 1)     -- +1 to avoid division by 0
         if access.term then
             cmd = cmd..";"
         end
@@ -101,7 +101,7 @@ end
 -- overwritten. Do we care? No.
 function processalias(command, infos)
     local foundaliascommand = false
-    local target, new_alias = command:match('^(.-)%s+'..ALIAS_COMMAND..'%s+(.-)%s*$')
+    local target, new_alias = command:match("^(.-)%s+"..ALIAS_COMMAND.."%s+(.-)%s*$")
 
     if new_alias then
         foundaliascommand = true
@@ -136,33 +136,8 @@ function processalias(command, infos)
 end
 
 
-function processdebianupdate(command, infos)
-    if command:sub(-1) == ";" then
-        command = command:sub(1, -2)
-    end
-
-    local foundupdatecommand = (command == UPDATE_DEBIAN_COMMAND)
-
-    if foundupdatecommand then
-        local now = os.time()
-        local programs = assert(io.popen('update-menus --stdout', 'r'))
-        for p in programs:lines() do
-            local cmd, needs, title = p:match('command="([^"]+)".-needs="([^"]+)".-title="([^"]+).*')
-            if cmd then
-                infos.aliases[title] = cmd
-                infos.commands[title] = {rank = 2, time = now, term = (needs:lower() == "text")}
-            end
-        end
-        programs:close()
-    end
-
-    return foundupdatecommand, infos
-end
-
-
 -- look for UPDATE keyword and, if present, add not yet existing commands to our table
 function processupdate(command, infos)
-
     if command:sub(-1) == ";" then
         command = command:sub(1, -2)
     end
@@ -172,7 +147,7 @@ function processupdate(command, infos)
     if foundupdatecommand then
         local now = os.time()
         -- ask the program 'dmenu_path' for a list of available commands
-        local programs = assert(io.popen('dmenu_path', 'r'))
+        local programs = assert(io.popen("dmenu_path", "r"))
         for p in programs:lines() do
             if not infos.commands[p] and not infos.exclude[p] then
                 infos.commands[p] = {rank = 1, time = now, term = false}
@@ -194,17 +169,40 @@ function processupdate(command, infos)
 end
 
 
+function processdebianupdate(command, infos)
+    if command:sub(-1) == ";" then
+        command = command:sub(1, -2)
+    end
+
+    local foundupdatecommand = (command == UPDATE_DEBIAN_COMMAND)
+
+    if foundupdatecommand then
+        local now = os.time()
+        local programs = assert(io.popen("update-menus --stdout", "r"))
+        for p in programs:lines() do
+            local cmd, needs, title = p:match('command="([^"]+)".-needs="([^"]+)".-title="([^"]+).*')
+            if cmd and title and not infos.commands[title] and not infos.exclude[cmd] then
+                infos.aliases[title] = cmd
+                infos.commands[title] = {rank = 2, time = now, term = (needs:lower() == "text")}
+            end
+        end
+        programs:close()
+    end
+
+    return foundupdatecommand, infos
+end
+
+
 -- look for REMOVE keyword for removing aliases or commands
 function processremove(command, infos)
     local foundremovecommand = false
-    local remove_this = command:match('^(.-)%s+'..REMOVE_COMMAND..'%s*')
+    local remove_this = command:match("^(.-)%s+"..REMOVE_COMMAND.."%s*")
 
     if remove_this then
         foundremovecommand = true
     end
 
     if foundremovecommand then
-
         if remove_this:sub(-1) == ";" then
             remove_this = remove_this:sub(1, -2)
         end
@@ -225,7 +223,6 @@ end
 
 
 function executecommand(chosenresult, infos)
-
     local terminal = false
     if chosenresult:sub(-1) == ";" then
         chosenresult = chosenresult:sub(1, -2)
